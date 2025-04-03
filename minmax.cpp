@@ -2,6 +2,37 @@
 #include <vector>
 #include <utility>
 using namespace std;
+bool nenraya(vector<vector<char>> tablero, int n, char XoO) {
+    // Recorre filas
+    for (int i = 0; i < n; i++) {
+        bool fila = true, columna = true;
+        for (int j = 0; j < n; j++) {
+            if (tablero[i][j] != XoO) fila = false;  // Fila no completa
+            if (tablero[j][i] != XoO) columna = false;  // Columna no completa
+        }
+        if (fila || columna) return true;
+    }
+
+    // Recorre diagonales
+    bool diag1 = true, diag2 = true;
+    for (int i = 0; i < n; i++) {
+        if (tablero[i][i] != XoO) diag1 = false;  // Diagonal principal
+        if (tablero[i][n - i - 1] != XoO) diag2 = false;  // Diagonal secundaria
+    }
+
+    return diag1 || diag2;
+}
+void Print(vector<vector<char>> tablero, int n) {
+    cout << endl;
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            char tmp = tablero[i][j];
+            cout << tmp << " ";
+        }
+        cout << endl;
+    }
+    cout << "---------" << endl;
+}
 struct Node {
     vector<vector<char>> tablero;
     int profundidad;
@@ -9,9 +40,10 @@ struct Node {
     int numhijos;
     int tamaño;
     char XoO;
+    int profundidaorig;
     pair<int, int> coordenadas;
-    Node(int n, int numh, int prof, vector<vector<char>> tab, char xo, int x, int y)
-        : tamaño(n), numhijos(numh), profundidad(prof), tablero(tab), XoO(xo), coordenadas(x,y) // Hace una copia del tablero
+    Node(int n, int numh, int prof,int profo, vector<vector<char>> tab, char xo, int x, int y)
+        : tamaño(n), numhijos(numh), profundidad(prof), profundidaorig(profo), tablero(tab), XoO(xo), coordenadas(x, y) // Hace una copia del tablero
     {
         hijos.resize(numhijos, nullptr);
     }
@@ -60,7 +92,7 @@ struct Node {
             res++;
         }
         i = 0;
-        int j = tamaño-1;
+        int j = tamaño - 1;
         tmp = 1;
         for (; i < tamaño; i++, j--) {
             if (tablero[i][j] == (XoO == 'X' ? 'O' : 'X')) {
@@ -77,26 +109,33 @@ struct Node {
         int mejorpuntaje;
         bool encontrado = false;
         if (profundidad != 0) {
-            int i=0;
+            int i = 0;
             for (int j = 0; j < tamaño; j++) {
                 for (int k = 0; k < tamaño; k++) {
                     if (tablero[j][k] == ' ') {
+                        if (nenraya(tablero, tamaño, XoO == 'X' ? 'O' : 'X')) {
+                            encontrado = false;
+                            break;
+                        }
+                        else {
+                            encontrado = true;
+                        }
                         tablero[j][k] = XoO;
-                        encontrado = true; 
-                        hijos[i] = new Node(tamaño, numhijos - 1, profundidad - 1, tablero, XoO == 'X' ? 'O' : 'X', j, k);
+                        hijos[i] = new Node(tamaño, numhijos - 1, profundidad - 1, profundidaorig, tablero, XoO == 'X' ? 'O' : 'X', j, k);
                         i++;
                         tablero[j][k] = ' ';
-                        }
                     }
-                } 
+                }
+            }
             if (encontrado) {
                 hijoganador = 0;
                 mejorpuntaje = hijos[0]->MinMax();
             }
             else {
-                return (calcpuntaje('X') - calcpuntaje('O'));
+                int tmp = (calcpuntaje('X') - calcpuntaje('O'));
+                return tmp;
             }
-            for (int i = 1;i<numhijos;i++) {
+            for (int i = 1;i < numhijos;i++) {
                 if (XoO == 'X') {
                     int tmp = hijos[i]->MinMax();
                     if (tmp > mejorpuntaje) {
@@ -112,8 +151,11 @@ struct Node {
                     }
                 }
             }
-            coordenadas.first = hijos[hijoganador]->coordenadas.first;
-            coordenadas.second = hijos[hijoganador]->coordenadas.second;
+            if (profundidad == profundidaorig) {
+                coordenadas.first = hijos[hijoganador]->coordenadas.first;
+                coordenadas.second = hijos[hijoganador]->coordenadas.second;
+            }
+             return mejorpuntaje;
         }
         else {
             int res = calcpuntaje('X') - calcpuntaje('O');
@@ -128,10 +170,10 @@ struct Arbol {
     int nhijos;
     vector< vector<char>> tablero;
     Node* root;
-    Arbol(int tam, int p, int hijos,const vector<vector<char>> tab)
+    Arbol(int tam, int p, int hijos, const vector<vector<char>> tab)
         : tamaño(tam), profundidad(p), nhijos(hijos), tablero(tab) // Hace una copia del tablero
     {
-        root = new Node(tamaño, nhijos, p, tablero, 'X', 0, 0);
+        root = new Node(tamaño, nhijos, p, p, tablero, 'X', 0, 0);
     }
     ~Arbol() { delete root; }
 
@@ -141,35 +183,7 @@ struct Arbol {
     }
 
 };
-bool nenraya(vector<vector<char>> tablero, int n, char XoO) {
-    // Recorre filas
-    for (int i = 0; i < n; i++) {
-        bool fila = true, columna = true;
-        for (int j = 0; j < n; j++) {
-            if (tablero[i][j] != XoO) fila = false;  // Fila no completa
-            if (tablero[j][i] != XoO) columna = false;  // Columna no completa
-        }
-        if (fila || columna) return true;
-    }
 
-    // Recorre diagonales
-    bool diag1 = true, diag2 = true;
-    for (int i = 0; i < n; i++) {
-        if (tablero[i][i] != XoO) diag1 = false;  // Diagonal principal
-        if (tablero[i][n - i - 1] != XoO) diag2 = false;  // Diagonal secundaria
-    }
-
-    return diag1 || diag2;
-}
-void Print(vector<vector<char>> tablero, int n) {
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            char tmp = tablero[i][j];
-            cout << tmp << " ";
-        }
-        cout << endl;
-    }
-}
 int main() {
     int n, p;
     char turno;
@@ -182,7 +196,7 @@ int main() {
     cout << "Ingrese la profundidad de busqueda del AI: ";
     cin >> p;
 
-    cout << "¿Quien empieza? (M = Maquina, H = Humano): ";
+    cout << "Quien empieza? (M = Maquina, H = Humano): ";
     cin >> turno;
 
     int espacios_disponibles = n * n;
@@ -215,17 +229,17 @@ int main() {
 
         if (nenraya(tablero, n, 'X')) {
             Print(tablero, n);
-            cout << "\nLa maquina gana. ¡Sigue practicando!\n";
+            cout << "\nLa maquina gana. Sigue practicando!\n";
             break;
         }
         else if (nenraya(tablero, n, 'O')) {
             Print(tablero, n);
-            cout << "\n¡Ganaste! Felicidades.\n";
+            cout << "\nGanaste! Felicidades.\n";
             break;
         }
         else if (espacios_disponibles == 0) {
             Print(tablero, n);
-            cout << "\nEmpate. ¡Buen juego!\n";
+            cout << "\nEmpate. Buen juego!\n";
             break;
         }
     }
