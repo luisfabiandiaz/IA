@@ -1,0 +1,244 @@
+#include <iostream>
+#include <unordered_map>
+#include <vector>
+#include <random>
+#include <algorithm>
+#include <limits>
+#include <cmath>
+#include <utility>
+#include <numeric>
+#include <cassert>
+#include <fstream>
+using namespace std;
+
+class RandomGen {
+	std::mt19937 gen;
+
+public:
+	RandomGen() : gen(std::random_device{}()) {}
+
+	int getInt(int min, int max) {
+		std::uniform_int_distribution<int> dist(min, max);
+		return dist(gen);
+	}
+
+	double getDouble(double min, double max) {
+		std::uniform_real_distribution<double> dist(min, max);
+		return dist(gen);
+	}
+
+	bool getBool(double prob = 0.5) {
+		std::bernoulli_distribution dist(prob);
+		return dist(gen);
+	}
+
+	template<typename T>
+	void shuffleVector(std::vector<T>& vec) {
+		std::shuffle(vec.begin(), vec.end(), gen);
+	}
+};
+
+struct Graph {
+	int size;
+	vector<pair<int, int>> pos;
+	vector<vector<int>> subjects, childrem;
+	pair<vector<int>, double> elite;
+	vector<double> score;
+
+	Graph(int n = 20) {
+		size = n;
+		pos = vector<pair<int, int>>(size, { 0, 0 });
+		subjects = vector<vector<int>>(n);
+		score = vector<double>(n);//n?
+		childrem = vector<vector<int>>(n);
+		elite = { {}, numeric_limits<double>::infinity() };
+	}
+
+	double getDistFor(const vector<int>& path) {
+		double total = 0;
+		for (size_t i = 0; i < path.size() - 1; ++i) {
+			int a_idx = path[i] == 0 ? 0 : path[i] - 1;
+			int b_idx = path[i + 1] == 0 ? 0 : path[i + 1] - 1;
+			auto& a = pos[a_idx];
+			auto& b = pos[b_idx];
+			total += sqrt(pow(a.first - b.first, 2) + pow(a.second - b.second, 2));
+		}
+		return total;
+	}
+
+	void init() {
+		RandomGen rnd;
+		int populationSize = size;
+		vector<int> basePath;
+		for (int i = 1; i <= size; ++i) basePath.push_back(i);
+
+		for (int i = 0; i < populationSize; ++i) {
+			vector<int> route = basePath;
+			rnd.shuffleVector(route);
+			route.insert(route.begin(), 0);
+			route.push_back(0);
+			subjects[i] = route;
+			score[i] = getDistFor(route);
+		}
+	}
+
+	void crossoverPMX(const vector<int>& p1, const vector<int>& p2, vector<int>& child, RandomGen& rnd) {
+
+		int sz = p1.size();
+		vector<bool> seen2(sz, false);
+		int l = rnd.getInt(1, sz - 2);
+		int r = rnd.getInt(1, sz - 2);
+		if (l > r) swap(l, r);
+
+		child.assign(sz, -1);
+		child[0] = child[sz - 1] = 0;
+
+		for (int i = l; i <= r; ++i)
+			child[i] = p1[i];
+
+		for (int i = 1; i < sz - 1; ++i) {
+			if (child[i] != -1) continue;
+
+			int val = p2[i];
+			while (find(p1.begin() + l, p1.begin() + r + 1, val) != p1.begin() + r + 1) {
+				int j = find(p1.begin() + l, p1.begin() + r + 1, val) - p1.begin();
+				val = p2[j];
+			}
+
+			child[i] = val;
+		}
+	}
+
+	void selection() {
+		RandomGen rnd;
+		int n = subjects.size();
+		vector<double> fitness(n);
+		double totalFitness = 0;
+		double min_score = score[0];
+		double max_score = score[0];
+		int peor = 0;
+		int mejor = 0;
+		for (int i = 0; i < n; ++i) {
+			if (score[i] < min_score) {
+				min_score = score[i];
+				mejor = i;
+			}
+			if (score[i] > max_score) {
+				max_score = score[i];
+				peor = i;
+			}
+		}
+		score[peor] = score[mejor];
+		subjects[peor] = subjects[mejor];
+		//fitness
+		for (int i = 0; i < n; ++i) {
+			fitness[i] = 1.0 / score[i];
+			totalFitness += fitness[i];
+		}
+
+		vector<double> probabilities(n);
+		for (int i = 0; i < n; ++i) {
+			probabilities[i] = fitness[i] / totalFitness;
+		}
+
+		// Seleccionar padres usando ruleta
+		for (int i = 0; i < n; i += 2) {
+			auto selectParent = [&]() {
+				double r = rnd.getDouble(0, 1);
+				double cumulative = 0.0;
+				for (int j = 0; j < n; ++j) {
+					cumulative += probabilities[j];
+					if (r <= cumulative) return j;
+				}
+				return n - 1;
+			};
+
+			int idx1 = selectParent();
+			int idx2 = selectParent();
+			while (idx2 == idx1) idx2 = selectParent();
+
+			vector<int> child1, child2;
+			crossoverPMX(subjects[idx1], subjects[idx2], child1, rnd);
+			crossoverPMX(subjects[idx2], subjects[idx1], child2, rnd); 
+
+			childrem[i] = child1;
+			if (i + 1 < n) childrem[i + 1] = child2;
+		}
+
+		// Actualizar nueva poblaci�n
+		subjects = childrem;
+		for (int i = 0; i < n; ++i) {
+			score[i] = getDistFor(subjects[i]);
+			if (score[i] < elite.second) {
+				elite = { subjects[i], score[i] };
+			}
+		}
+	}
+
+	void mutate(double mutationRate = 0.2) {
+		RandomGen rnd;
+		int n = subjects.size();
+
+		for (int i = 0; i < n; ++i) {
+			if (rnd.getBool(mutationRate)) {
+				vector<int>& path = subjects[i];
+
+				int idx1 = rnd.getInt(1, path.size() - 2);
+				int idx2 = rnd.getInt(1, path.size() - 2);
+				while (idx2 == idx1) {
+					idx2 = rnd.getInt(1, path.size() - 2);
+				}
+
+				swap(path[idx1], path[idx2]);
+
+				score[i] = getDistFor(path);
+
+				if (score[i] < elite.second) {
+					elite = { path, score[i] };
+				}
+			}
+		}
+	}
+
+
+};
+
+int main() {
+	int t;
+	cout << "Cantidad de ciudades: ";
+	cin >> t;
+
+	Graph g(t);
+
+	cout << "Coordenadas de las ciudades (x y):\n";
+	for (int i = 0; i < t; i++) {
+		cin >> g.pos[i].first >> g.pos[i].second;
+	}
+
+	g.init();
+
+	int generations;
+	cout << "Cantidad de generaciones: ";
+	cin >> generations;
+
+	ofstream outFile("D:/tarea geneticos/resultados_generaciones.csv");
+	outFile << "Generacion,Promedio,Mejor\n";
+
+	for (int i = 0; i < generations; ++i) {
+		g.selection();
+		g.mutate();
+		double sum = 0.0;
+		for (double s : g.score) sum += s;
+		double promedio = sum / g.score.size();
+		outFile << i + 1 << "," << promedio << "," << g.elite.second << "\n";
+	}
+	outFile.close();
+
+	cout << "\nMejor ruta (elite): ";
+	for (auto city : g.elite.first) {
+		cout << city << " ";
+	}
+	cout << "\nDistancia total: " << g.elite.second << endl;
+
+	return 0;
+}
